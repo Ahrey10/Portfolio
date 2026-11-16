@@ -29,7 +29,17 @@ export default function Contact() {
     try {
       const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ service_id: SERVICE, template_id: TEMPLATE, user_id: KEY, template_params: { from_name: f.name, reply_to: f.email, message: f.message, to_email: profile.email } }),
+        body: JSON.stringify({
+          service_id: SERVICE,
+          template_id: TEMPLATE,
+          user_id: KEY,
+          template_params: {
+            name: f.name,
+            email: f.email,
+            message: f.message,
+            title: `New message from ${f.name}`, // optional, fills {{title}} in Subject
+          },
+        }),
       });
       if (!res.ok) throw new Error(String(res.status));
       setStatus("success"); setF({ name: "", email: "", message: "" });
