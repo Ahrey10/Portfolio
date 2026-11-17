@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { Theme } from "./hooks";
+import { poseRider, SEAT } from "./riderPose";
 
 const river = (z: number) => Math.sin(z * 0.06) * 5;
 const smooth = (t: number) => { const c = Math.min(1, Math.max(0, t)); return c * c * (3 - 2 * c); };
@@ -13,11 +15,12 @@ const dot = () => {
   const g = c.getContext("2d")!; g.fillStyle = "#fff"; g.beginPath(); g.arc(16, 16, 15, 0, 6.3); g.fill();
   return new THREE.CanvasTexture(c);
 };
+const BIKE_SCALE = 2.3, BEHIND = 11.5; // bike size and how far ahead of the camera it rides // bike size and how far ahead of the camera it rides
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
 const PAL = {
-  light: { sky: 0xdbe7e0, low: 0x5f8f5a, high: 0x9aa596, snow: 0xf2f5f0, leaf: 0x2f6b45, trunk: 0x5b4636, peak: 0x8fa39a, water: 0x6fb1c4, cloud: 0xffffff, cloudA: 0.85, sun: 0xffe2a8, hemi: [0xffffff, 0x6a8a64, 1.0], dir: [0xfff1d6, 1.1], mote: 0xffffff },
-  dark: { sky: 0x0b120f, low: 0x1d3a27, high: 0x3a4a44, snow: 0x8da0a8, leaf: 0x16382a, trunk: 0x2a2018, peak: 0x23322c, water: 0x1f4a5c, cloud: 0x3a4a52, cloudA: 0.35, sun: 0xdfe8ff, hemi: [0x6f86b0, 0x0c1410, 0.55], dir: [0x9fb6ff, 0.35], mote: 0xe8ff9a },
+  light: { sky: 0xdbe7e0, low: 0x5f8f5a, high: 0x9aa596, snow: 0xf2f5f0, leaf: 0x2f6b45, trunk: 0x5b4636, peak: 0x8fa39a, water: 0x474d52, cloud: 0xffffff, cloudA: 0.85, sun: 0xffe2a8, hemi: [0xffffff, 0x6a8a64, 1.0], dir: [0xfff1d6, 1.1], mote: 0xffffff },
+  dark: { sky: 0x0b120f, low: 0x1d3a27, high: 0x3a4a44, snow: 0x8da0a8, leaf: 0x16382a, trunk: 0x2a2018, peak: 0x23322c, water: 0x1b2024, cloud: 0x3a4a52, cloudA: 0.35, sun: 0xdfe8ff, hemi: [0x6f86b0, 0x0c1410, 0.55], dir: [0x9fb6ff, 0.35], mote: 0xe8ff9a },
 } as const;
 
 export default function Background({ theme }: { theme: Theme }) {
@@ -48,14 +51,60 @@ export default function Background({ theme }: { theme: Theme }) {
     ground.position.z = -20;
     scene.add(ground);
 
-    // River ribbon following the valley curve.
-    const wg = new THREE.PlaneGeometry(6, 120, 1, 60);
-    wg.rotateX(-Math.PI / 2);
-    const wp = wg.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < wp.count; i++) wp.setX(i, wp.getX(i) + river(wp.getZ(i) - 20));
-    const water = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85 }));
-    water.position.set(0, -0.3, -20);
-    scene.add(water);
+    // Road: asphalt ribbon, edge lines, dashed centre line and roadside posts, all following the valley curve.
+    const roadMat = new THREE.MeshLambertMaterial();
+    const edgeMat = new THREE.MeshBasicMaterial(), dashMat = new THREE.MeshBasicMaterial(), postMat = new THREE.MeshLambertMaterial();
+    const ribbon = (w: number, off: number, y: number, mat: THREE.Material) => {
+      const g = new THREE.PlaneGeometry(w, 120, 1, 120);
+      g.rotateX(-Math.PI / 2);
+      const p = g.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < p.count; i++) { p.setX(i, p.getX(i) + off + river(p.getZ(i) - 20)); p.setY(i, y); }
+      const m = new THREE.Mesh(g, mat); m.position.z = -20; return m;
+    };
+    scene.add(ribbon(7, 0, -0.45, roadMat), ribbon(0.14, -3.1, -0.43, edgeMat), ribbon(0.14, 3.1, -0.43, edgeMat));
+    const dashes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 0.02, 2), dashMat, 30);
+    const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.06, 0.9, 6), postMat, 48);
+    const d = new THREE.Object3D();
+    for (let i = 0; i < 30; i++) { const z = 36 - i * 4; d.position.set(river(z), -0.42, z); d.rotation.set(0, Math.atan(Math.cos(z * 0.06) * 0.3), 0); d.updateMatrix(); dashes.setMatrixAt(i, d.matrix); }
+    d.rotation.set(0, 0, 0);
+    for (let i = 0; i < 48; i++) { const z = 38 - (i >> 1) * 5; d.position.set(river(z) + (i & 1 ? 4 : -4), -0.15, z); d.updateMatrix(); posts.setMatrixAt(i, d.matrix); }
+    scene.add(dashes, posts);
+
+    // Motorcycle with rider, seen from behind, riding just ahead of the camera.
+    const bikeMat = new THREE.MeshLambertMaterial({ flatShading: true });
+    const darkMat = new THREE.MeshLambertMaterial({ color: 0x1b2024, flatShading: true });
+    const bike = new THREE.Group(), wheels: THREE.Mesh[] = [];
+    const part = (g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); bike.add(o); return o; };
+    [-0.85, 0.85].forEach((z) => wheels.push(part(new THREE.TorusGeometry(0.32, 0.08, 8, 18).rotateY(Math.PI / 2), darkMat, 0, 0.4, z)));
+    part(new THREE.BoxGeometry(0.2, 0.25, 1.5), darkMat, 0, 0.6, 0);
+    part(new THREE.BoxGeometry(0.32, 0.28, 0.5), bikeMat, 0, 0.86, -0.3);
+    part(new THREE.BoxGeometry(0.3, 0.1, 0.8), darkMat, 0, 0.8, 0.35);
+    part(new THREE.BoxGeometry(0.3, 0.05, 0.05), darkMat, 0, 1.08, -0.3);
+    // Simple stand-in rider, removed as soon as the avatar model has loaded.
+    const stand = [part(new THREE.BoxGeometry(0.42, 0.62, 0.3), bikeMat, 0, 1.3, 0.2), part(new THREE.SphereGeometry(0.2, 12, 10), bikeMat, 0, 1.85, 0.05)];
+    stand[0].rotation.x = -0.3;
+    part(new THREE.BoxGeometry(0.1, 0.1, 0.04), new THREE.MeshBasicMaterial({ color: 0xff3b30 }), 0, 0.85, 0.77);
+    bike.scale.setScalar(BIKE_SCALE);
+    bike.rotation.order = "YXZ"; // pitch and lean stay relative to the bike's own heading
+    const head = new THREE.SpotLight(0xfff2cc, 0, 45, 0.5, 0.6);
+    head.position.set(0, 1, -0.9); head.target.position.set(0, 0, -12);
+    bike.add(head, head.target);
+    bike.position.set(river(30 - BEHIND), -0.45, 30 - BEHIND);
+    scene.add(bike);
+
+    // Your avatar (GLB): seated on the bike in a riding pose.
+    let disposed = false;
+    new GLTFLoader().load("/models/rider.glb", (gltf) => {
+      if (disposed) return;
+      const rider = gltf.scene;
+      rider.traverse((o) => { o.frustumCulled = false; }); // skinned meshes are posed after load
+      rider.position.set(SEAT.x, SEAT.y, SEAT.z);
+      rider.rotation.y = Math.PI; // the avatar faces +z, the bike rides towards -z
+      rider.scale.setScalar(SEAT.scale);
+      bike.add(rider);
+      poseRider(rider);
+      stand.forEach((o) => { bike.remove(o); o.geometry.dispose(); });
+    }, undefined, () => { /* model missing or failed: keep the stand-in rider */ });
 
     // Distant peaks with snow caps.
     const peakMat = new THREE.MeshLambertMaterial({ flatShading: true });
@@ -153,7 +202,8 @@ export default function Background({ theme }: { theme: Theme }) {
       c.needsUpdate = true;
       leafMat.color.setHex(p.leaf); trunkMat.color.setHex(p.trunk);
       peakMat.color.setHex(p.peak); snowMat.color.setHex(p.snow);
-      (water.material as THREE.MeshBasicMaterial).color.setHex(p.water);
+      roadMat.color.setHex(p.water); edgeMat.color.setHex(night ? 0x9aa89f : 0xf0f3ee); dashMat.color.setHex(night ? 0xb9a860 : 0xe8c25a);
+      postMat.color.setHex(night ? 0x8a968f : 0xdfe6df); bikeMat.color.setHex(night ? 0x52b788 : 0x2b5636); head.intensity = night ? 300 : 0;
       cloudMat.color.setHex(p.cloud); cloudMat.opacity = p.cloudA;
       (sun.material as THREE.MeshBasicMaterial).color.setHex(p.sun);
       (halo.material as THREE.MeshBasicMaterial).color.setHex(p.sun);
@@ -171,17 +221,22 @@ export default function Background({ theme }: { theme: Theme }) {
     const onMove = (e: PointerEvent) => { mx = e.clientX / innerWidth - 0.5; my = e.clientY / innerHeight - 0.5; };
     const onScroll = () => { prog = scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight); };
     addEventListener("pointermove", onMove); addEventListener("scroll", onScroll, { passive: true });
-    camera.position.set(0, 7, 32);
+    camera.position.set(river(30), 4.8, 30);
     const clock = new THREE.Clock();
 
     const tick = () => {
       const dt = clock.getDelta(), t = clock.elapsedTime;
       if (!reduce) {
         // Scroll walks the camera down the valley; the pointer adds parallax.
-        const z = 32 - prog * 56, x = river(z) * 0.6 + mx * 6, y = 6 + prog * 3 - my * 2;
+        const z = 30 - prog * 54, x = river(z) + mx * 3, y = 4.8 + prog * 1.5 - my;
         camera.position.x += (x - camera.position.x) * 0.05;
         camera.position.y += (y - camera.position.y) * 0.05;
         camera.position.z += (z - camera.position.z) * 0.06;
+        // The bike rides ahead of the camera, leans into bends and its wheels turn as you scroll.
+        const bz = camera.position.z - BEHIND;
+        bike.position.set(river(bz), -0.45 + Math.sin(t * 28) * 0.004, bz);
+        bike.rotation.set(0, Math.atan(Math.cos(bz * 0.06) * 0.3), Math.sin(bz * 0.06) * 0.2);
+        wheels.forEach((w) => { w.rotation.x = camera.position.z * -1.4; });
         clouds.forEach((c) => { c.position.x += dt * 0.8; if (c.position.x > 95) c.position.x = -95; });
         flock.forEach((b) => {
           b.g.position.x += dt * b.sp; if (b.g.position.x > 80) b.g.position.x = -80;
@@ -190,20 +245,25 @@ export default function Background({ theme }: { theme: Theme }) {
         });
         motes.position.y = Math.sin(t * 0.5) * 0.6; motes.rotation.y = t * 0.02;
       }
-      camera.lookAt(camera.position.x * 0.4, 5, camera.position.z - 30);
+      camera.lookAt(bike.position.x, 2.5, bike.position.z - 12);
       renderer.render(scene, camera);
       raf = requestAnimationFrame(tick);
     };
     onScroll(); tick();
 
     return () => {
+      disposed = true;
       cancelAnimationFrame(raf);
       removeEventListener("resize", resize); removeEventListener("pointermove", onMove); removeEventListener("scroll", onScroll);
       scene.traverse((n) => {
         const m = n as THREE.Mesh;
         m.geometry?.dispose();
         const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-        (Array.isArray(mat) ? mat : mat ? [mat] : []).forEach((x) => x.dispose());
+        (Array.isArray(mat) ? mat : mat ? [mat] : []).forEach((x) => {
+          Object.values(x).forEach((v) => { const t = v as THREE.Texture | null; if (t?.isTexture) t.dispose(); });
+          x.dispose();
+        });
+        (n as THREE.SkinnedMesh).skeleton?.dispose();
       });
       renderer.dispose(); el.removeChild(renderer.domElement);
     };

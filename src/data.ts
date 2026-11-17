@@ -46,3 +46,16 @@ export const education = [
   { name: "BS Information Technology", school: "National College of Science and Technology", period: "2018 – 2022" },
   { name: "Senior High School, ICT", school: "Philippine Christian University", period: "2016 – 2018" },
 ];
+
+export const about = {
+  paragraphs: [
+    "I’m a Full Stack Web Developer from Imus, Cavite. For four years I’ve built and maintained web-based business systems for a logistics company, from warehouse operations to billing and customer management.",
+    "My work covers a Warehouse Management System, Client Portal, Integrated Billing System and CRM that all connect to one another, plus a reusable website template that became the standard base for new company systems. I care about clean, maintainable code, responsive interfaces, and catching bugs early through code reviews and testing.",
+    "Right now I’m learning Python, AI engineering and PostgreSQL, and I use Claude and Claude Code in my daily workflow. Away from the keyboard I ride motorcycles, which is where the mountain scenery in this portfolio comes from.",
+  ],
+  stats: [
+    { label: "Experience", value: "4 years" },
+    { label: "Connected systems", value: "4" },
+    { label: "Reusable template", value: "1" },
+  ],
+};

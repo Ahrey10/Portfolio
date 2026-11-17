@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { profile, skills, experience, projects, education } from "./data";
+import { profile, about, skills, experience, projects, education } from "./data";
 import { useTheme, useParallax, usePrefersReducedMotion, useActiveSection } from "./hooks";
 import Background from "./Background";
 import Contact from "./Contact";
 import { Card, Shot, Logo, Welcome, Leaf, Highlighted } from "./ui";
 
-const NAV = ["work", "projects", "skills", "education", "contact"] as const;
+const NAV = ["about", "work", "projects", "skills", "education", "contact"] as const;
 const SECTIONS = ["top", ...NAV];
 
 const Sun = () => <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.900 4.900l1.400 1.400M17.700 17.700l1.400 1.400M2 12h2M20 12h2M4.900 19.100l1.400-1.400M17.700 6.300l1.400-1.400" /></svg>;
@@ -40,6 +40,17 @@ export default function App() {
             <div className="cta"><a className="btn primary" href="#projects">View projects</a><a className="btn" href="#contact">Get in touch</a></div>
             <ul className="facts"><li>4 years of experience</li><li>{profile.location}</li><li>Logistics systems</li></ul>
           </div>
+        </section>
+
+        <section id="about" className="sec" aria-labelledby="h-about">
+          <h2 id="h-about">About me</h2>
+          <Card i={0} className="about">
+            <img className="about-photo" src="/logo.jpg" alt="Portrait of Rey Mar Britania" width={240} height={240} loading="lazy" />
+            <div>
+              {about.paragraphs.map((p) => <p key={p}><Highlighted text={p} /></p>)}
+              <dl className="stats">{about.stats.map((s) => <div key={s.label}><dt>{s.label}</dt><dd>{s.value}</dd></div>)}</dl>
+            </div>
+          </Card>
         </section>
 
         <section id="work" className="sec" aria-labelledby="h-work">
