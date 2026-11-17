@@ -3,7 +3,9 @@ import { profile, about, skills, experience, projects, education } from "./data"
 import { useTheme, useParallax, usePrefersReducedMotion, useActiveSection } from "./hooks";
 import Background from "./Background";
 import Contact from "./Contact";
-import { Card, Shot, Logo, Welcome, Leaf, Highlighted } from "./ui";
+import { Card, Shot, Logo, Leaf, Highlighted } from "./ui";
+import Welcome from "./Welcome";
+import Cursor from "./Cursor";
 
 const NAV = ["about", "work", "projects", "skills", "education", "contact"] as const;
 const SECTIONS = ["top", ...NAV];
@@ -20,6 +22,7 @@ export default function App() {
 
   return (
     <>
+      <Cursor />
       <Background theme={theme} />
       {!ready && <Welcome onDone={() => setReady(true)} />}
       <header className="nav">

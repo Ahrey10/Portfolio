@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { usePrefersReducedMotion, useCardTilt, useInView } from "./hooks";
 
 const KEYS = ["Warehouse Management System", "Client Portal", "Integrated Billing System", "CRM", "WMS", "reusable website template", "standard base", "code reviews", "responsive", "QR code scanner", "VILT", "customer codes", "QNE", "Swagger", "end to end", "Laravel", "Node.js", "browsers"];
@@ -43,22 +43,5 @@ export function Logo() {
     <a href="#top" className="brand" aria-label="Rey Mar Britania, back to top">
       {bad ? <span className="mono">RB</span> : <img src="/logo.jpg" alt="" width={42} height={42} onError={() => setBad(true)} />}
     </a>
-  );
-}
-
-export function Welcome({ onDone }: { onDone: () => void }) {
-  const reduced = usePrefersReducedMotion();
-  const [out, setOut] = useState(false);
-  useEffect(() => {
-    if (reduced) { onDone(); return; }
-    const a = setTimeout(() => setOut(true), 2300), b = setTimeout(onDone, 3000);
-    return () => { clearTimeout(a); clearTimeout(b); };
-  }, [reduced, onDone]);
-  if (reduced) return null;
-  return (
-    <div className={`welcome ${out ? "out" : ""}`} role="status" aria-label="Welcome">
-      <p className="w-hi">{"Welcome".split("").map((c, k) => <span key={k} style={{ animationDelay: `${k * 70}ms` }}>{c}</span>)}</p>
-      <span className="w-line" />
-    </div>
   );
 }
