@@ -33,11 +33,11 @@ export default function Welcome({ onDone }: { onDone: () => void }) {
 
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.setSize(280, 350);
+    renderer.setSize(380, 475);
     el.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(28, 280 / 350, 0.1, 50);
-    camera.position.set(0, 1, 5.2); camera.lookAt(0, 0.92, 0);
+    const camera = new THREE.PerspectiveCamera(28, 380 / 475, 0.1, 50);
+    camera.position.set(0, 1, 4.8); camera.lookAt(0, 0.92, 0);
     scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.5));
     const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(2, 4, 5); scene.add(sun);
 
