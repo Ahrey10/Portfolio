@@ -38,17 +38,20 @@ const ease = (x: number) => { const k = Math.min(1, Math.max(0, x)); return k * 
 /** 0 = upright, 1 = fully bowed. Repeats every 3.4 s: stand, bow down, hold, come back up. */
 const bow = (t: number) => { const c = t % 3.4; return ease((c - 0.5) / 0.8) - ease((c - 1.9) / 0.8); };
 
-/** Standing greeting: arms at the sides, then a polite bow from the waist. Returns a function to call each frame with time t (seconds). */
+/** Standing greeting: right hand on the chest, left hand behind the back, then a polite bow from the waist. Call the returned function every frame with time t (seconds). */
 export function poseWelcome(root: THREE.Object3D): (t: number) => void {
-  const names = ["Spine", "Spine1", "Spine2", "Neck", "Head", "LeftArm", "RightArm"];
+  const names = ["Spine", "Spine1", "Spine2", "Neck", "Head", "LeftArm", "LeftForeArm", "RightArm", "RightForeArm"];
   const rest = new Map(names.map((n) => [n, root.getObjectByName(n)?.quaternion.clone()]));
   return (t) => {
     names.forEach((n) => { const b = root.getObjectByName(n), r = rest.get(n); if (b && r) b.quaternion.copy(r); });
+    // Arms first, while the torso is upright, so the hands stay on the body when it bows.
+    turn(root, "LeftArm", "z", -78); turn(root, "LeftArm", "x", 8);            // left arm down, a touch back
+    turn(root, "LeftForeArm", "z", -80); turn(root, "LeftForeArm", "y", -10);   // forearm across the lower back
+    turn(root, "RightArm", "z", 78); turn(root, "RightArm", "x", -12);          // right arm down, a touch forward
+    turn(root, "RightForeArm", "z", 135); turn(root, "RightForeArm", "y", -35); // forearm up across the chest
     const k = bow(t);
     [18, 12, 8].forEach((deg, i) => turn(root, ["Spine", "Spine1", "Spine2"][i], "x", k * deg)); // bend at the waist
     turn(root, "Neck", "x", k * 6); turn(root, "Head", "x", k * 4);
-    // arms are set after the torso bends, so they keep hanging straight down
-    turn(root, "LeftArm", "z", -75); turn(root, "RightArm", "z", 75);
     root.updateMatrixWorld(true);
   };
 }
