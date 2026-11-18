@@ -4,11 +4,11 @@ import { useTheme, useActiveSection, type Theme } from "./hooks";
 import Background from "./Background";
 import Contact from "./Contact";
 import { Card, Shot, Logo, Leaf, Highlighted, SkillIcon } from "./ui";
-import type { Slide } from "./Lightbox";
+import type { Slide } from "./LightBox";
 import Welcome from "./Welcome";
 import Cursor from "./Cursor";
 
-const Lightbox = lazy(() => import("./Lightbox")); // loaded on the first preview
+const Lightbox = lazy(() => import("./LightBox")); // loaded on the first preview
 
 const NAV = ["about", "work", "projects", "skills", "education", "contact"] as const;
 const SECTIONS = ["top", ...NAV];
