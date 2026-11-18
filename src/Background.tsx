@@ -191,7 +191,7 @@ const PAL = {
     grassA: 0x4b7a37, grassB: 0x6c8d43, dry: 0x8b875a, rockT: 0x7c7a73, snow: 0xf4f7f8,
     ridge: 0x5f6f6c, ridgeSnow: 0xeef3f6, pine: 0x2b5a3c, broad: 0x46733a, trunk: 0x4a3828, blade: 0x5f8b3f,
     road: 0xffffff, gravel: 0xcfc8b8, rock: 0xc9c5bc, boulder: 0x76736c, concrete: 0xc4c8c6,
-    cloud: 0xffffff, cloudA: 0.85, mote: 0xffffff, tun: 0xfff1c9, paint: 0x1e6a63,
+    cloud: 0xffffff, cloudA: 0.85, mote: 0xffffff, tun: 0xfff1c9, paint: 0xf4f5f2,
     hemi: [0xdfefff, 0x4f6a45, 0.55], dir: [0xfff1d9, 1.6], env: 0.6, exposure: 1.1,
   },
   dark: {
@@ -199,14 +199,17 @@ const PAL = {
     grassA: 0x1a3324, grassB: 0x22392a, dry: 0x2c3428, rockT: 0x3a4046, snow: 0x8a9cab,
     ridge: 0x18242c, ridgeSnow: 0x6f8291, pine: 0x12301f, broad: 0x173422, trunk: 0x241c15, blade: 0x1f3a26,
     road: 0x59636a, gravel: 0x6a6a64, rock: 0x586068, boulder: 0x50565c, concrete: 0x6c7070,
-    cloud: 0x2c3a46, cloudA: 0.4, mote: 0xe8ff9a, tun: 0xffe08a, paint: 0x2c8f7e,
+    cloud: 0x2c3a46, cloudA: 0.4, mote: 0xe8ff9a, tun: 0xffe08a, paint: 0xeef1f2,
     hemi: [0x7f96c4, 0x16241c, 1.1], dir: [0xa9bfff, 0.9], env: 0.6, exposure: 1.3,
   },
 } as const;
 
-export default function Background({ theme }: { theme: Theme }) {
+/** `paused` skips drawing while something covers the whole scene (the welcome screen). */
+export default function Background({ theme, paused = false }: { theme: Theme; paused?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const apply = useRef<(t: Theme) => void>(() => {});
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   useEffect(() => {
     const el = host.current!;
@@ -215,6 +218,8 @@ export default function Background({ theme }: { theme: Theme }) {
     renderer.setPixelRatio(Math.min(devicePixelRatio, MAX_DPR));
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.autoUpdate = false; // redrawn only when the bike moves (see tick)
+    let dirty = true, shadowDirty = true; // dirty: something changed that a still scene must redraw
     el.appendChild(renderer.domElement);
     const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     const scene = new THREE.Scene();
@@ -438,6 +443,7 @@ export default function Background({ theme }: { theme: Theme }) {
       bike.add(rider);
       poseRider(rider);
       stand.forEach((s) => { s.removeFromParent(); s.geometry.dispose(); });
+      dirty = shadowDirty = true;
     }, undefined, () => { /* keep the stand-in rider */ });
 
     // Clouds: soft sprite puffs.
@@ -525,10 +531,15 @@ export default function Background({ theme }: { theme: Theme }) {
       mm.color.setHex(p.mote); mm.opacity = night ? 0.95 : 0.5; mm.size = night ? 0.3 : 0.15;
       mm.blending = night ? THREE.AdditiveBlending : THREE.NormalBlending; mm.needsUpdate = true;
       stars.visible = night; birds.visible = !night;
+      dirty = shadowDirty = true;
     };
     apply.current(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
-    const resize = () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
+    // Most of the scene never moves: compute those matrices once instead of every frame.
+    scene.traverse((o) => { o.updateMatrix(); o.matrixAutoUpdate = false; });
+    [bike, sky, stars, motes, birds, dir, dir.target, ...clouds].forEach((root) => root.traverse((o) => { o.matrixAutoUpdate = true; }));
+
+    const resize = () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); dirty = true; };
     resize(); addEventListener("resize", resize);
 
     let mx = 0, my = 0, prog = 0, raf = 0;
@@ -537,9 +548,14 @@ export default function Background({ theme }: { theme: Theme }) {
     addEventListener("pointermove", onMove); addEventListener("scroll", onScroll, { passive: true });
     camera.position.set(river(30), 4.8, 30);
     const clock = new THREE.Clock();
+    // Adaptive resolution: if frames stay slow, step the pixel ratio down (never below 1).
+    let dpr = Math.min(devicePixelRatio, MAX_DPR), slow = 0, frames = 0;
+    const lastShadow = new THREE.Vector3(Infinity, 0, 0);
 
     const tick = () => {
+      raf = requestAnimationFrame(tick);
       const dt = clock.getDelta(), t = clock.elapsedTime;
+      if (pausedRef.current && !dirty) return; // hidden behind the welcome screen; the first frame still compiles everything
       if (!reduce) {
         // Scrolling rides the camera down the road towards the tunnel; the pointer adds parallax.
         const z = 30 - prog * RIDE, x = river(z) + mx * 3, y = 4.8 + prog * 1.5 - my;
@@ -562,8 +578,14 @@ export default function Background({ theme }: { theme: Theme }) {
       sky.position.copy(camera.position); stars.position.copy(camera.position);
       dir.target.position.copy(bike.position); dir.position.copy(bike.position).add(lightOffset); // shadows follow the bike
       camera.lookAt(bike.position.x, 2.5, bike.position.z - 12);
+      if (bike.position.distanceToSquared(lastShadow) > 0.0009 || shadowDirty) { renderer.shadowMap.needsUpdate = true; lastShadow.copy(bike.position); shadowDirty = false; }
+      if (reduce && !dirty) return; // still scene: draw only when something changed
+      dirty = false;
       renderer.render(scene, camera);
-      raf = requestAnimationFrame(tick);
+      if (!reduce && dt < 0.25 && dpr > 1) {
+        slow += dt > 1 / 45 ? 1 : 0;
+        if (++frames === 90) { if (slow > 45) { dpr = Math.max(1, dpr - 0.25); renderer.setPixelRatio(dpr); } frames = slow = 0; }
+      }
     };
     onScroll(); tick();
 

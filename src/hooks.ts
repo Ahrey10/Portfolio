@@ -25,19 +25,6 @@ export function useTheme(): [Theme, () => void] {
   return [theme, () => setTheme((t) => (t === "light" ? "dark" : "light"))];
 }
 
-/** Publishes scroll position as --scroll for CSS parallax. */
-export function useParallax(reduced: boolean): void {
-  useEffect(() => {
-    if (reduced) return;
-    let raf = 0;
-    const upd = () => { raf = 0; document.documentElement.style.setProperty("--scroll", String(Math.min(scrollY, 1200))); };
-    const on = () => { if (!raf) raf = requestAnimationFrame(upd); };
-    upd();
-    addEventListener("scroll", on, { passive: true });
-    return () => { removeEventListener("scroll", on); cancelAnimationFrame(raf); };
-  }, [reduced]);
-}
-
 /** Cursor-tracking 3D tilt and spotlight position (CSS variables). */
 export function useCardTilt(reduced: boolean) {
   if (reduced) return {};
@@ -52,15 +39,21 @@ export function useCardTilt(reduced: boolean) {
   };
 }
 
+/** One shared observer for every card (instead of one per card); each element registers its own callback. */
+const inView = new Map<Element, (v: boolean) => void>();
+const observers = new Map<number, IntersectionObserver>();
+function watch(el: Element, threshold: number, cb: (v: boolean) => void): () => void {
+  let io = observers.get(threshold);
+  if (!io) { io = new IntersectionObserver((es) => es.forEach((e) => inView.get(e.target)?.(e.isIntersecting)), { threshold }); observers.set(threshold, io); }
+  inView.set(el, cb); io.observe(el);
+  return () => { inView.delete(el); io.unobserve(el); };
+}
+
 /** True while the element is in the viewport (reverses on scroll out). */
 export function useInView<T extends HTMLElement>(threshold = 0.15): [RefObject<T>, boolean] {
   const ref = useRef<T>(null);
   const [seen, setSeen] = useState(false);
-  useEffect(() => {
-    const io = new IntersectionObserver(([e]) => setSeen(e.isIntersecting), { threshold });
-    io.observe(ref.current!);
-    return () => io.disconnect();
-  }, [threshold]);
+  useEffect(() => watch(ref.current!, threshold, setSeen), [threshold]);
   return [ref, seen];
 }
 
