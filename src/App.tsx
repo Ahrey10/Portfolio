@@ -3,12 +3,15 @@ import { profile, about, skills, experience, projects, education } from "./data"
 import { useTheme, useParallax, usePrefersReducedMotion, useActiveSection } from "./hooks";
 import Background from "./Background";
 import Contact from "./Contact";
-import { Card, Shot, Logo, Leaf, Highlighted } from "./ui";
+import { Card, Shot, Logo, Leaf, Highlighted, SkillIcon } from "./ui";
+import Lightbox, { type Slide } from "./LightBox";
 import Welcome from "./Welcome";
 import Cursor from "./Cursor";
 
 const NAV = ["about", "work", "projects", "skills", "education", "contact"] as const;
 const SECTIONS = ["top", ...NAV];
+// Only projects with a real screenshot can be previewed.
+const SLIDES: Slide[] = projects.flatMap((p) => (p.image ? [{ src: p.image, name: p.name }] : []));
 
 const Sun = () => <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.900 4.900l1.400 1.400M17.700 17.700l1.400 1.400M2 12h2M20 12h2M4.900 19.100l1.400-1.400M17.700 6.300l1.400-1.400" /></svg>;
 const Moon = () => <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z" /></svg>;
@@ -17,6 +20,7 @@ export default function App() {
   const [theme, toggle] = useTheme();
   const reduced = usePrefersReducedMotion();
   const [ready, setReady] = useState(false);
+  const [preview, setPreview] = useState<number | null>(null);
   const active = useActiveSection(SECTIONS);
   useParallax(reduced);
 
@@ -41,7 +45,7 @@ export default function App() {
             <p className="role">{profile.role}</p>
             <p className="lead">{profile.summary}</p>
             <div className="cta"><a className="btn primary" href="#projects">View projects</a><a className="btn" href="#contact">Get in touch</a></div>
-            <ul className="facts"><li>4 years of experience</li><li>{profile.location}</li><li>Logistics systems</li></ul>
+            <ul className="facts">{profile.facts.map((f) => <li key={f}>{f}</li>)}</ul>
           </div>
         </section>
 
@@ -77,7 +81,7 @@ export default function App() {
           <div className="proj-grid">
             {projects.map((p, i) => (
               <Card key={p.name} i={i} className="proj">
-                <Shot src={p.image} name={p.name} />
+                <Shot src={p.image} name={p.name} onOpen={p.image ? () => setPreview(SLIDES.findIndex((x) => x.src === p.image)) : undefined} />
                 <h3>{p.name}</h3>
                 <p><Highlighted text={p.text} /></p>
                 <p className="impact"><Leaf />{p.impact}</p>
@@ -93,7 +97,7 @@ export default function App() {
             {skills.map((s, i) => (
               <Card key={s.group} i={i}>
                 <h3>{s.group}</h3>
-                <ul className="bullets">{s.items.map((it) => <li key={it}><Leaf />{it}</li>)}</ul>
+                <ul className="bullets">{s.items.map((it) => <li key={it.name}><SkillIcon name={it.icon} />{it.name}</li>)}</ul>
               </Card>
             ))}
           </div>
@@ -117,12 +121,13 @@ export default function App() {
               <h3>Direct contact</h3>
               <p className="avail"><i aria-hidden="true" />{profile.availability}</p>
               <p>{profile.email}</p><p>{profile.phone}</p><p>{profile.location}</p>
-              <p className="meta">Messages from the form go straight to my inbox.</p>
+              <p className="meta">Messages sent through this form go directly to my inbox.</p>
             </Card>
             <Card i={1}><h3>Send a message</h3><Contact /></Card>
           </div>
         </section>
       </main>
+      {preview !== null && <Lightbox slides={SLIDES} index={preview} onIndex={setPreview} onClose={() => setPreview(null)} />}
       <footer className="foot">© {new Date().getFullYear()} {profile.name}</footer>
     </>
   );

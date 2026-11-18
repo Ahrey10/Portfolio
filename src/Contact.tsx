@@ -36,8 +36,9 @@ export default function Contact() {
           template_params: {
             name: f.name,
             email: f.email,
+            title: `New message from ${f.name}`, // fills {{title}} in the Subject
+            time: new Date().toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" }),
             message: f.message,
-            title: `New message from ${f.name}`, // optional, fills {{title}} in Subject
           },
         }),
       });
