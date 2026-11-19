@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { usePrefersReducedMotion } from "./hooks";
 import { poseWelcome } from "./riderPose";
 import { BikeIcon } from "./ui";
+import { loadRider } from "./rider";
 
-THREE.Cache.enabled = true; // the portfolio background reuses the downloaded model
 const MIN_MS = 2600, MAX_MS = 7000, EXIT_MS = 850;
 
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; };
@@ -21,12 +20,14 @@ export default function Welcome({ onDone }: { onDone: () => void }) {
   const [out, setOut] = useState(false);
   const [hasModel, setHasModel] = useState(true);
   const [hello] = useState(greeting);
+  const done = useRef(onDone); // a ref, so a new callback from the parent never restarts the 3D scene
+  done.current = onDone;
 
   useEffect(() => {
-    if (reduced) { onDone(); return; }
+    if (reduced) { done.current(); return; }
     const el = host.current!;
     let loaded = false, minDone = false, left = false, raf = 0;
-    const leave = () => { if (left) return; left = true; setOut(true); timers.push(setTimeout(onDone, EXIT_MS)); };
+    const leave = () => { if (left) return; left = true; setOut(true); timers.push(setTimeout(() => done.current(), EXIT_MS)); };
     skip.current = leave;
     const check = () => { if (loaded && minDone) leave(); };
     const timers = [setTimeout(() => { minDone = true; check(); }, MIN_MS), setTimeout(leave, MAX_MS)];
@@ -46,15 +47,12 @@ export default function Welcome({ onDone }: { onDone: () => void }) {
     const rim = new THREE.DirectionalLight(0xbfe3ff, 1.6); rim.position.set(-3, 3, -4); // soft back light so the outline glows
     scene.add(key1, rim);
 
-    let bow: ((t: number) => void) | null = null, avatar: THREE.Object3D | null = null;
-    new GLTFLoader().load("/models/rider.glb", (gltf) => {
-      avatar = gltf.scene;
-      avatar.traverse((o) => { o.frustumCulled = false; });
-      bow = poseWelcome(avatar);
-      scene.add(avatar);
+    let bow: ((t: number) => void) | null = null, avatar: THREE.Object3D | null = null, gone = false;
+    loadRider((f) => setProgress((p) => Math.max(p, Math.round(f * 100)))).then((a) => {
+      if (gone) return;
+      avatar = a; bow = poseWelcome(avatar); scene.add(avatar);
       loaded = true; setProgress(100); check();
-    }, (ev) => { if (ev.total) setProgress((p) => Math.max(p, Math.round((ev.loaded / ev.total) * 100))); },
-    () => { setHasModel(false); loaded = true; setProgress(100); check(); });
+    }, () => { if (gone) return; setHasModel(false); loaded = true; setProgress(100); check(); });
 
     const clock = new THREE.Clock();
     const tick = () => {
@@ -66,20 +64,14 @@ export default function Welcome({ onDone }: { onDone: () => void }) {
     tick();
 
     return () => {
+      gone = true;
       timers.forEach(clearTimeout); clearInterval(fake); cancelAnimationFrame(raf); removeEventListener("keydown", key);
-      scene.traverse((n) => {
-        const m = n as THREE.Mesh;
-        m.geometry?.dispose();
-        const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-        (Array.isArray(mat) ? mat : mat ? [mat] : []).forEach((x) => {
-          Object.values(x).forEach((v) => { const tx = v as THREE.Texture | null; if (tx?.isTexture) tx.dispose(); });
-          x.dispose();
-        });
-        (n as THREE.SkinnedMesh).skeleton?.dispose();
-      });
-      renderer.dispose(); el.removeChild(renderer.domElement);
+      // The avatar's geometry, materials and textures are shared with the background (see rider.ts), so they are not
+      // disposed here; dropping this canvas's own WebGL context frees everything it uploaded.
+      scene.traverse((n) => (n as THREE.SkinnedMesh).skeleton?.dispose());
+      renderer.dispose(); renderer.forceContextLoss(); el.removeChild(renderer.domElement);
     };
-  }, [reduced, onDone]);
+  }, [reduced]);
 
   if (reduced) return null;
   return (

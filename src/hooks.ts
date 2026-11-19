@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
 
 export type Theme = "light" | "dark";
 const RM = "(prefers-reduced-motion: reduce)";
@@ -22,7 +22,8 @@ export function useTheme(): [Theme, () => void] {
     document.documentElement.dataset.theme = theme;
     try { localStorage.setItem("theme", theme); } catch { /* ignore */ }
   }, [theme]);
-  return [theme, () => setTheme((t) => (t === "light" ? "dark" : "light"))];
+  const toggle = useCallback(() => setTheme((t) => (t === "light" ? "dark" : "light")), []); // stable, so memoised consumers skip re-renders
+  return [theme, toggle];
 }
 
 /** Cursor-tracking 3D tilt and spotlight position (CSS variables). */

@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { usePrefersReducedMotion, useCardTilt, useInView } from "./hooks";
 import { ICONS, type IconName } from "./icons";
 
@@ -6,9 +6,10 @@ const KEYS = ["Warehouse Management System", "Client Portal", "Integrated Billin
 const RE = new RegExp(`(${KEYS.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "gi");
 
 export const Highlight = ({ children }: { children: ReactNode }) => <mark className="hl">{children}</mark>;
-export const Highlighted = ({ text }: { text: string }) => (
-  <>{text.split(RE).map((t, i) => (i % 2 ? <Highlight key={i}>{t}</Highlight> : t))}</>
-);
+export const Highlighted = memo(function Highlighted({ text }: { text: string }) {
+  const parts = useMemo(() => text.split(RE), [text]);
+  return <>{parts.map((t, i) => (i % 2 ? <Highlight key={i}>{t}</Highlight> : t))}</>;
+});
 
 export const Leaf = () => (
   <svg className="leaf" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M14 2C6 2 2 6 2 11c0 1.2.3 2.2.8 3C4 9 7 7 10 6 7.500 7.800 5.500 10.500 5 14c6 0 9-4 9-12z" fill="currentColor" /></svg>
@@ -52,7 +53,7 @@ const Zoom = () => <svg viewBox="0 0 24 24" width="18" height="18" fill="none" s
 /** Browser-style frame; falls back to the placeholder when no image is given or it fails to load. Real screenshots open in the preview. */
 export function Shot({ src, name, onOpen }: { src?: string; name: string; onOpen?: () => void }) {
   const [bad, setBad] = useState(!src);
-  const img = <img src={bad ? DEFAULT_SHOT : src} alt={bad ? `${name} preview placeholder` : `${name} screenshot, blurred to protect client data`} loading="lazy" onError={() => setBad(true)} />;
+  const img = <img src={bad ? DEFAULT_SHOT : src} alt={bad ? `${name} preview placeholder` : `${name} screenshot, blurred to protect client data`} loading="lazy" decoding="async" onError={() => setBad(true)} />;
   return (
     <figure className="frame">
       <figcaption><i /><i /><i /><span>{name}</span></figcaption>

@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 
 /** Custom cursor: a dot plus a trailing ring that reacts to links, cards and clicks. Fine pointers only. */
-export default function Cursor() {
+export default memo(function Cursor() {
   const dot = useRef<HTMLDivElement>(null), ring = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!matchMedia("(hover: hover) and (pointer: fine)").matches) return;
@@ -32,4 +32,4 @@ export default function Cursor() {
     };
   }, []);
   return (<><div ref={ring} className="cur-ring" aria-hidden="true" /><div ref={dot} className="cur-dot" aria-hidden="true" /></>);
-}
+});

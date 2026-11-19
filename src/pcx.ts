@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 /**
  * Procedural scooter in the style of a Honda PCX 160, built in metres (forward is -z, ground at y = 0).
@@ -32,6 +33,29 @@ function panel(pts: Pt[], width: number, bevel: number, taper: (z: number, y: nu
   return g;
 }
 
+/**
+ * Draw-call reduction: bakes every direct child mesh of `parent` (except `keep`) into one mesh per material.
+ * The scooter is ~80 small parts; merged it is a dozen meshes, each drawn once for colour and once for shadows.
+ */
+function mergeByMaterial(parent: THREE.Object3D, keep: Set<THREE.Object3D> = new Set()) {
+  const groups = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  for (const o of [...parent.children]) {
+    const m = o as THREE.Mesh;
+    if (keep.has(o) || !m.isMesh || Array.isArray(m.material)) continue;
+    m.updateMatrix();
+    const g = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone()).applyMatrix4(m.matrix);
+    for (const name of Object.keys(g.attributes)) if (!["position", "normal", "uv"].includes(name)) g.deleteAttribute(name);
+    groups.set(m.material, [...(groups.get(m.material) ?? []), g]);
+    m.removeFromParent(); m.geometry.dispose();
+  }
+  for (const [mat, list] of groups) {
+    const merged = mergeGeometries(list);
+    list.forEach((g) => g.dispose());
+    if (!merged) throw new Error("pcx: parts with mismatched attributes cannot be merged");
+    const mesh = new THREE.Mesh(merged, mat); mesh.castShadow = true; parent.add(mesh);
+  }
+}
+
 export interface Scooter {
   group: THREE.Group;
   wheels: THREE.Group[];
@@ -44,7 +68,7 @@ export interface Scooter {
 }
 
 export function buildPCX(): Scooter {
-  const paint = new THREE.MeshPhysicalMaterial({ metalness: 0.45, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.1 });
+  const paint = new THREE.MeshPhysicalMaterial({ color: 0xf4f5f2, metalness: 0.1, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.08 }); // pearl white
   const trim = new THREE.MeshStandardMaterial({ color: 0x1b1e21, roughness: 0.62 }); // matte black plastic
   const seatMat = new THREE.MeshStandardMaterial({ color: 0x17181a, roughness: 0.55 });
   const metal = new THREE.MeshStandardMaterial({ color: 0x8c9196, metalness: 0.85, roughness: 0.35 }); // cast aluminium
@@ -144,6 +168,8 @@ export function buildPCX(): Scooter {
   // Stand-in rider, used only if the avatar fails to load.
   const standIn = [add(new THREE.BoxGeometry(0.38, 0.58, 0.24), paint, 0, 1.07, 0.16), add(new THREE.SphereGeometry(0.12, 14, 10), paint, 0, 1.5, 0.14)];
 
+  wheels.forEach((w) => mergeByMaterial(w)); // each wheel still spins as one group
+  mergeByMaterial(group, new Set<THREE.Object3D>([...wheels, ...standIn]));
   group.traverse((n) => { if ((n as THREE.Mesh).isMesh) n.castShadow = true; });
   return {
     group, wheels, paint, lamp, tail, standIn, beam: new THREE.Vector3(0, 0.78, -1.08),

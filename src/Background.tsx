@@ -1,10 +1,10 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Theme } from "./hooks";
 import { poseRider, SEAT } from "./riderPose";
 import { buildPCX, PCX } from "./pcx";
+import { loadRider } from "./rider";
 
 const BIKE_SCALE = 2.3, BEHIND = 11.5; // bike size and how far ahead of the camera it rides
 const RIDE = 78; // distance the camera travels down the road as you scroll (ends just before the tunnel)
@@ -128,7 +128,7 @@ function pineGeo() {
 /** Broadleaf crown: three lumpy spheres. */
 function broadGeo() {
   const parts = ([[0, 3.7, 0, 1.6], [0.9, 3.1, 0.4, 1.15], [-0.75, 3.3, -0.5, 1.2]] as const).map(([x, y, z, r]) => {
-    const g0 = new THREE.IcosahedronGeometry(r, 2); g0.deleteAttribute("uv"); g0.deleteAttribute("normal");
+    const g0 = new THREE.IcosahedronGeometry(r, 1); g0.deleteAttribute("uv"); g0.deleteAttribute("normal"); // detail 1: a quarter of the triangles, still smooth once displaced
     const g = mergeVertices(g0), p = g.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) {
       const v = new THREE.Vector3().fromBufferAttribute(p, i), k = 0.82 + 0.36 * noise(v.x * 1.7 + v.y * 2.1 + 9, v.z * 1.7 - v.y);
@@ -205,7 +205,7 @@ const PAL = {
 } as const;
 
 /** `paused` skips drawing while something covers the whole scene (the welcome screen). */
-export default function Background({ theme, paused = false }: { theme: Theme; paused?: boolean }) {
+export default memo(function Background({ theme, paused = false }: { theme: Theme; paused?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const apply = useRef<(t: Theme) => void>(() => {});
   const pausedRef = useRef(paused);
@@ -214,7 +214,8 @@ export default function Background({ theme, paused = false }: { theme: Theme; pa
   useEffect(() => {
     const el = host.current!;
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    // MSAA is skipped on high-density screens: the extra pixels already smooth edges, and it is costly on phones.
+    const renderer = new THREE.WebGLRenderer({ antialias: devicePixelRatio < 1.5, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(devicePixelRatio, MAX_DPR));
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -397,7 +398,7 @@ export default function Background({ theme, paused = false }: { theme: Theme; pa
     grass.receiveShadow = true; scene.add(grass);
 
     // Boulders along the road, plus large rock masses that break up the tunnel face.
-    const bg0 = new THREE.IcosahedronGeometry(1, 2); bg0.deleteAttribute("uv"); bg0.deleteAttribute("normal");
+    const bg0 = new THREE.IcosahedronGeometry(1, 1); bg0.deleteAttribute("uv"); bg0.deleteAttribute("normal");
     const boulderG = mergeVertices(bg0), bp = boulderG.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < bp.count; i++) {
       const v = new THREE.Vector3().fromBufferAttribute(bp, i), k = 0.75 + 0.5 * fbm(v.x * 1.3 + v.y + 4, v.z * 1.3 - v.y, 3);
@@ -433,43 +434,47 @@ export default function Background({ theme, paused = false }: { theme: Theme; pa
     scene.add(bike);
 
     let disposed = false;
-    new GLTFLoader().load("/models/rider.glb", (gltf) => {
+    loadRider().then((rider) => {
       if (disposed) return;
-      const rider = gltf.scene;
-      rider.traverse((n) => { n.frustumCulled = false; if ((n as THREE.Mesh).isMesh) n.castShadow = true; });
+      rider.traverse((n) => { if ((n as THREE.Mesh).isMesh) n.castShadow = true; });
       rider.position.set(SEAT.x, SEAT.y, SEAT.z);
       rider.rotation.y = Math.PI;
       rider.scale.setScalar(SEAT.scale);
       bike.add(rider);
       poseRider(rider);
+      rider.traverse((o) => { o.updateMatrix(); o.matrixAutoUpdate = false; }); // the pose never changes; only the bike moves it
       stand.forEach((s) => { s.removeFromParent(); s.geometry.dispose(); });
       dirty = shadowDirty = true;
-    }, undefined, () => { /* keep the stand-in rider */ });
+    }, () => { /* keep the stand-in rider */ });
 
-    // Clouds: soft sprite puffs.
-    const cloudMat = new THREE.SpriteMaterial({ map: puff(), transparent: true, depthWrite: false, fog: false });
-    const clouds: THREE.Group[] = [];
+    // Clouds: soft puffs. Each cloud's puffs are merged into one mesh (one draw call per cloud instead of seven sprites);
+    // the camera always looks roughly down -z, so flat quads facing the viewer read the same as sprites.
+    const cloudMat = new THREE.MeshBasicMaterial({ map: puff(), transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    const clouds: THREE.Mesh[] = [];
     for (let i = 0; i < 8; i++) {
-      const g = new THREE.Group();
-      for (let k = 0; k < 7; k++) {
-        const s = new THREE.Sprite(cloudMat), w = rnd(9, 17);
-        s.position.set(k * 3.2 - 10 + rnd(-1, 1), rnd(-1.2, 1.5), rnd(-2, 2)); s.scale.set(w, w * 0.55, 1); g.add(s);
-      }
-      g.position.set(rnd(-90, 90), rnd(22, 34), rnd(-100, -35));
-      clouds.push(g); scene.add(g);
+      const quads = Array.from({ length: 7 }, (_, k) => { const w = rnd(9, 17); return new THREE.PlaneGeometry(w, w * 0.55).translate(k * 3.2 - 10 + rnd(-1, 1), rnd(-1.2, 1.5), rnd(-2, 2)); });
+      const c = new THREE.Mesh(mergeGeometries(quads)!, cloudMat); quads.forEach((q) => q.dispose());
+      c.position.set(rnd(-90, 90), rnd(22, 34), rnd(-100, -35)); c.renderOrder = 1;
+      clouds.push(c); scene.add(c);
     }
 
     // Birds (day only).
     const wingG = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1.3, 0.1, -0.5, 1.1, 0, 0.6]), 3));
     const birdMat = new THREE.MeshBasicMaterial({ color: 0x1d2a21, side: THREE.DoubleSide, fog: false });
-    const birds = new THREE.Group();
-    const flock: { g: THREE.Group; l: THREE.Mesh; r: THREE.Mesh; ph: number; sp: number }[] = [];
-    for (let i = 0; i < 9; i++) {
-      const g = new THREE.Group(), l = new THREE.Mesh(wingG, birdMat), r = new THREE.Mesh(wingG, birdMat);
-      l.scale.x = -1; g.add(l, r); g.scale.setScalar(0.8);
-      g.position.set(rnd(-70, 70), rnd(14, 22), rnd(-45, -8));
-      flock.push({ g, l, r, ph: rnd(0, 6), sp: rnd(2, 4) }); birds.add(g);
-    }
+    // All 18 wings are one instanced mesh (one draw call); each frame writes the wing matrices.
+    const birds = new THREE.InstancedMesh(wingG, birdMat, 18);
+    birds.frustumCulled = false;
+    const flock = Array.from({ length: 9 }, () => ({ p: new THREE.Vector3(rnd(-70, 70), rnd(14, 22), rnd(-45, -8)), ph: rnd(0, 6), sp: rnd(2, 4) }));
+    const wing = new THREE.Object3D();
+    const flap = (t: number) => flock.forEach((b, i) => {
+      const f = Math.sin(t * 8 + b.ph) * 0.55;
+      [-1, 1].forEach((side, k) => { // left wing is the right wing mirrored in x
+        wing.position.copy(b.p); wing.rotation.set(0, 0, side * f); wing.scale.set(side * 0.8, 0.8, 0.8); wing.updateMatrix();
+        birds.setMatrixAt(i * 2 + k, wing.matrix);
+      });
+      birds.instanceMatrix.needsUpdate = true;
+    });
+    flap(0);
     scene.add(birds);
 
     // Stars (night) sit on a sphere around the camera and draw right after the sky, so mountains cover them.
@@ -568,11 +573,10 @@ export default function Background({ theme, paused = false }: { theme: Theme; pa
         wheels.forEach((w) => { w.rotation.x = bz / (PCX.wheelR * SEAT.scale * BIKE_SCALE); }); // rolls forward without slipping
         wind.value = t;
         clouds.forEach((c) => { c.position.x += dt * 0.8; if (c.position.x > 105) c.position.x = -105; });
-        flock.forEach((b) => {
-          b.g.position.x += dt * b.sp; if (b.g.position.x > 80) b.g.position.x = -80;
-          const f = Math.sin(t * 8 + b.ph) * 0.55; b.l.rotation.z = -f; b.r.rotation.z = f;
-          b.g.position.y += Math.sin(t + b.ph) * 0.01;
-        });
+        if (birds.visible) { // hidden at night, so no work then
+          flock.forEach((b) => { b.p.x += dt * b.sp; if (b.p.x > 80) b.p.x = -80; b.p.y += Math.sin(t + b.ph) * 0.01; });
+          flap(t);
+        }
         motes.position.y = Math.sin(t * 0.5) * 0.6; motes.rotation.y = t * 0.02;
       }
       sky.position.copy(camera.position); stars.position.copy(camera.position);
@@ -616,4 +620,4 @@ export default function Background({ theme, paused = false }: { theme: Theme; pa
     return () => clearTimeout(id);
   }, [theme]);
   return <div ref={host} className="bg3d" aria-hidden="true" />;
-}
+});
