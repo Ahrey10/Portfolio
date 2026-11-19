@@ -6,7 +6,6 @@ import Contact from "./Contact";
 import { Card, Shot, Logo, Leaf, Highlighted, SkillIcon } from "./ui";
 import type { Slide } from "./LightBox";
 import Welcome from "./Welcome";
-import Cursor from "./Cursor";
 
 const Lightbox = lazy(() => import("./LightBox")); // loaded on the first preview
 
@@ -164,7 +163,6 @@ export default function App() {
 
   return (
     <>
-      <Cursor />
       <Background theme={theme} paused={!ready} />
       {!ready && <Welcome onDone={done} />}
       <Header theme={theme} toggle={toggle} />

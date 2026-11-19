@@ -129,18 +129,6 @@ background:color-mix(in srgb,var(--bg) 75%,transparent);border:1px solid var(--l
 .frame img{transition:transform .6s ease,object-position 2.2s ease-in-out}
 .card:hover .frame img{object-position:100% 0}
 
-/* Custom cursor (fine pointers only) */
-.has-cursor,.has-cursor *{cursor:none!important}
-.has-cursor input,.has-cursor textarea{cursor:text!important}
-.cur-dot,.cur-ring{position:fixed;left:0;top:0;z-index:200;pointer-events:none;translate:-50% -50%;border-radius:50%}
-.cur-dot{width:8px;height:8px;background:var(--accent);transition:opacity .2s}
-.cur-ring{width:36px;height:36px;border:1.5px solid var(--accent);transition:width .25s,height .25s,background-color .25s,opacity .25s}
-.cur-ring[data-kind=link]{width:58px;height:58px;background:color-mix(in srgb,var(--accent) 22%,transparent)}
-.cur-ring[data-kind=card]{width:66px;height:66px;border-style:dashed;background:color-mix(in srgb,var(--accent) 10%,transparent);animation:cur-spin 7s linear infinite}
-.cur-ring[data-kind=text],.cur-dot[data-kind=text]{opacity:0}
-.cur-ring.press{width:24px;height:24px}
-@keyframes cur-spin{to{rotate:360deg}}
-
 /* Skills: one icon per item (replaces the leaf bullet in this section) */
 .bullets .skill-icon{flex:none;color:var(--accent);transition:transform .35s cubic-bezier(.3,1.6,.5,1),color .3s}
 .card:hover .bullets .skill-icon{transform:scale(1.15);color:var(--accent-2)}
