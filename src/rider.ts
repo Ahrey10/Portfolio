@@ -4,15 +4,15 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 import { clone } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 /**
- * The avatar is downloaded and decoded once, then shared: the welcome screen and the background each get their own
- * clone (own skeleton, so each can be posed separately) that reuses the same geometry, materials and textures.
+ * The avatar is downloaded and decoded once and cached; each call returns a clone (own skeleton, so it can be posed)
+ * that reuses the same geometry, materials and textures, so remounting the background never downloads it again.
  * The model is meshopt-compressed with WebP textures, so the loader needs the meshopt decoder.
  */
 let model: Promise<Object3D> | null = null;
 
-export function loadRider(onProgress?: (fraction: number) => void): Promise<Object3D> {
+export function loadRider(): Promise<Object3D> {
   model ??= new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
-    .loadAsync("/models/rider.glb", (e) => { if (e.total) onProgress?.(e.loaded / e.total); })
+    .loadAsync("/models/rider.glb")
     .then((gltf) => gltf.scene);
   model.catch(() => { model = null; }); // allow a retry on a later mount if the download failed
   return model.then((scene) => {
